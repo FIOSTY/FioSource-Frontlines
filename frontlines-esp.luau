@@ -22,8 +22,8 @@ local Window = Rayfield:CreateWindow({
 
 local VisualsTab = Window:CreateTab("Visuals", "eye")
 local ColorsTab = Window:CreateTab("Colors", "palette")
-local MiscTab = Window:CreateTab("Misc", "bolt")
 local ConfigTab = Window:CreateTab("Configs", "save")
+local MiscTab = Window:CreateTab("Misc", "settings")
 
 local Settings = {
     ESP_Enabled = true,
@@ -32,6 +32,8 @@ local Settings = {
     Chams_Walls = true,
     HideTeam = true,
     ShowTracers = true,
+    ShowDistance = true,
+    TracerOrigin = "Bottom",
     MinPartSize = 0.5,
     BoxHeight = 7.5,
     BoxWidth = 3.5,
@@ -40,15 +42,15 @@ local Settings = {
     MergeDistance = 6,
     BoxType = "2D",
     ChamMatchRadius = 10,
+    Fullbright = false,
+    FullbrightStrength = 2,
+    PerformanceMode = false,
     EnemyColor = {R = 255, G = 0, B = 0},
     FriendlyColor = {R = 0, G = 255, B = 0},
     EnemyChamsFill = {R = 255, G = 0, B = 0},
     FriendlyChamsFill = {R = 0, G = 255, B = 0},
     ChamsOutline = {R = 255, G = 255, B = 255},
-    TracerColor = {R = 255, G = 255, B = 255},
-    Fullbright = false,
-    PerformanceMode = false,
-    FOV = 70
+    TracerColor = {R = 255, G = 255, B = 255}
 }
 
 local liveSettings = {
@@ -63,10 +65,15 @@ local liveSettings = {
 local configFolder = "FrontlinesESP/Configs/"
 local currentConfigName = ""
 
-local originalLighting = {}
-local perfCache = {particles = {}, trails = {}, lights = {}, fires = {}, smokes = {}, bloom = nil, atmosphere = nil}
-local perfConnected = false
-local perfConnection = nil
+local fullbrightState = {
+    enabled = false,
+    savedLighting = {}
+}
+
+local perfState = {
+    enabled = false,
+    savedSettings = {}
+}
 
 local function colorToTable(color)
     return {R = math.floor(color.R * 255), G = math.floor(color.G * 255), B = math.floor(color.B * 255)}
@@ -133,20 +140,140 @@ local function listConfigs()
     return files
 end
 
+local function enableFullbright()
+    if not fullbrightState.enabled then
+        fullbrightState.enabled = true
+        fullbrightState.savedLighting = {
+            Ambient = Lighting.Ambient,
+            Brightness = Lighting.Brightness,
+            ClockTime = Lighting.ClockTime,
+            FogEnd = Lighting.FogEnd,
+            FogColor = Lighting.FogColor,
+            GlobalShadows = Lighting.GlobalShadows,
+            OutdoorAmbient = Lighting.OutdoorAmbient,
+            ExposureCompensation = Lighting.ExposureCompensation
+        }
+    end
+    local strength = Settings.FullbrightStrength
+    Lighting.Ambient = Color3.new(strength / 4, strength / 4, strength / 4)
+    Lighting.Brightness = 1 + strength
+    Lighting.ClockTime = 14
+    Lighting.FogEnd = 100000
+    Lighting.FogColor = Color3.new(1, 1, 1)
+    Lighting.GlobalShadows = false
+    Lighting.OutdoorAmbient = Color3.new(strength / 4, strength / 4, strength / 4)
+    Lighting.ExposureCompensation = strength / 2
+end
+
+local function disableFullbright()
+    if not fullbrightState.enabled then return end
+    fullbrightState.enabled = false
+    local s = fullbrightState.savedLighting
+    if s.Ambient then Lighting.Ambient = s.Ambient end
+    if s.Brightness then Lighting.Brightness = s.Brightness end
+    if s.ClockTime then Lighting.ClockTime = s.ClockTime end
+    if s.FogEnd then Lighting.FogEnd = s.FogEnd end
+    if s.FogColor then Lighting.FogColor = s.FogColor end
+    if s.GlobalShadows ~= nil then Lighting.GlobalShadows = s.GlobalShadows end
+    if s.OutdoorAmbient then Lighting.OutdoorAmbient = s.OutdoorAmbient end
+    if s.ExposureCompensation then Lighting.ExposureCompensation = s.ExposureCompensation end
+    fullbrightState.savedLighting = {}
+end
+
+local function applyFullbrightState()
+    if Settings.Fullbright then
+        enableFullbright()
+    else
+        disableFullbright()
+    end
+end
+
+local function enablePerformanceMode()
+    if not perfState.enabled then
+        perfState.enabled = true
+        perfState.savedSettings = {}
+        pcall(function() perfState.savedSettings.QualityLevel = settings().Rendering.QualityLevel end)
+        pcall(function() perfState.savedSettings.MeshPartDetail = settings().Rendering.MeshPartDetail end)
+        perfState.savedSettings.GlobalShadows = Lighting.GlobalShadows
+        perfState.savedSettings.Technology = Lighting.Technology
+        perfState.savedSettings.Brightness = Lighting.Brightness
+        perfState.savedSettings.Ambient = Lighting.Ambient
+        perfState.savedSettings.OutdoorAmbient = Lighting.OutdoorAmbient
+        perfState.savedSettings.FogEnd = Lighting.FogEnd
+        perfState.savedSettings.ExposureCompensation = Lighting.ExposureCompensation
+    end
+    pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level03 end)
+    pcall(function() settings().Rendering.MeshPartDetail = Enum.MeshPartDetail.Level04 end)
+    pcall(function() Lighting.GlobalShadows = false end)
+    pcall(function() Lighting.Technology = Enum.Technology.Compatibility end)
+    pcall(function() Lighting.FogEnd = 100000 end)
+    pcall(function() Lighting.ExposureCompensation = 0 end)
+end
+
+local function disablePerformanceMode()
+    if not perfState.enabled then return end
+    perfState.enabled = false
+    local s = perfState.savedSettings
+    pcall(function() if s.QualityLevel then settings().Rendering.QualityLevel = s.QualityLevel end end)
+    pcall(function() if s.MeshPartDetail then settings().Rendering.MeshPartDetail = s.MeshPartDetail end end)
+    pcall(function() if s.GlobalShadows ~= nil then Lighting.GlobalShadows = s.GlobalShadows end end)
+    pcall(function() if s.Technology then Lighting.Technology = s.Technology end end)
+    pcall(function() if s.Brightness then Lighting.Brightness = s.Brightness end end)
+    pcall(function() if s.Ambient then Lighting.Ambient = s.Ambient end end)
+    pcall(function() if s.OutdoorAmbient then Lighting.OutdoorAmbient = s.OutdoorAmbient end end)
+    pcall(function() if s.FogEnd then Lighting.FogEnd = s.FogEnd end end)
+    pcall(function() if s.ExposureCompensation then Lighting.ExposureCompensation = s.ExposureCompensation end end)
+    perfState.savedSettings = {}
+end
+
+local function applyPerformanceMode()
+    if Settings.PerformanceMode then
+        enablePerformanceMode()
+    else
+        disablePerformanceMode()
+    end
+end
+
+local ESP_Objects = {}
+local Cham_Objects = {}
+local cachedParts = {}
+local lastCacheUpdate = 0
+local frameCount = 0
+
+local function ClearAllChams()
+    for key, cham in pairs(Cham_Objects) do
+        if cham and cham.Parent then cham:Destroy() end
+    end
+    table.clear(Cham_Objects)
+end
+
+local function getTracerOrigin()
+    local vp = Camera.ViewportSize
+    if Settings.TracerOrigin == "Top" then
+        return Vector2.new(vp.X / 2, 0)
+    elseif Settings.TracerOrigin == "Middle" then
+        return Vector2.new(vp.X / 2, vp.Y / 2)
+    else
+        return Vector2.new(vp.X / 2, vp.Y)
+    end
+end
+
 local espToggle = VisualsTab:CreateToggle({Name = "Enable ESP", CurrentValue = true, Flag = "esp_enabled", Callback = function(v) Settings.ESP_Enabled = v end})
 local boxToggle = VisualsTab:CreateToggle({Name = "Show Box", CurrentValue = true, Flag = "box_enabled", Callback = function(v) Settings.Box_Enabled = v end})
 local tracerToggle = VisualsTab:CreateToggle({Name = "Show Tracers", CurrentValue = true, Flag = "show_tracers", Callback = function(v) Settings.ShowTracers = v end})
+local distanceToggle = VisualsTab:CreateToggle({Name = "Show Distance", CurrentValue = true, Flag = "show_distance", Callback = function(v) Settings.ShowDistance = v end})
 local chamsToggle = VisualsTab:CreateToggle({Name = "Body Chams", CurrentValue = true, Flag = "chams_enabled", Callback = function(v) Settings.Chams_Enabled = v end})
 local chamsWallsToggle = VisualsTab:CreateToggle({Name = "Chams Through Walls", CurrentValue = true, Flag = "chams_walls", Callback = function(v) Settings.Chams_Walls = v end})
 local hideTeamToggle = VisualsTab:CreateToggle({Name = "Hide Teammates", CurrentValue = true, Flag = "hide_team", Callback = function(v) Settings.HideTeam = v end})
 local boxTypeDropdown = VisualsTab:CreateDropdown({Name = "Box Type", Options = {"2D", "3D"}, CurrentOption = {"2D"}, MultipleOptions = false, Flag = "box_type", Callback = function(v) Settings.BoxType = v[1] end})
+local tracerOriginDropdown = VisualsTab:CreateDropdown({Name = "Tracer Origin", Options = {"Bottom", "Middle", "Top"}, CurrentOption = {"Bottom"}, MultipleOptions = false, Flag = "tracer_origin", Callback = function(v) Settings.TracerOrigin = v[1] end})
 local boxHeightSlider = VisualsTab:CreateSlider({Name = "Box Height", Range = {5, 10}, Increment = 0.5, Suffix = "stud", CurrentValue = 7.5, Flag = "box_height", Callback = function(v) Settings.BoxHeight = v end})
 local boxWidthSlider = VisualsTab:CreateSlider({Name = "Box Width", Range = {2, 5}, Increment = 0.5, Suffix = "stud", CurrentValue = 3.5, Flag = "box_width", Callback = function(v) Settings.BoxWidth = v end})
 local maxDistanceSlider = VisualsTab:CreateSlider({Name = "Max Distance", Range = {100, 1000}, Increment = 50, Suffix = "stud", CurrentValue = 500, Flag = "max_distance", Callback = function(v) Settings.MaxDistance = v end})
 local mergeDistanceSlider = VisualsTab:CreateSlider({Name = "Merge Distance", Range = {3, 15}, Increment = 0.5, Suffix = "stud", CurrentValue = 6, Flag = "merge_distance", Callback = function(v) Settings.MergeDistance = v end})
 
 local enemyColorPicker = ColorsTab:CreateColorPicker({
-    Name = "Enemy ESP Color",
+    Name = "Enemy Box Color",
     Color = liveSettings.EnemyColor,
     Flag = "enemy_esp_color",
     Callback = function(v)
@@ -155,7 +282,7 @@ local enemyColorPicker = ColorsTab:CreateColorPicker({
     end
 })
 local friendlyColorPicker = ColorsTab:CreateColorPicker({
-    Name = "Friendly ESP Color",
+    Name = "Friendly Box Color",
     Color = liveSettings.FriendlyColor,
     Flag = "friendly_esp_color",
     Callback = function(v)
@@ -200,35 +327,69 @@ local tracerColorPicker = ColorsTab:CreateColorPicker({
     end
 })
 
-local fullbrightToggle = MiscTab:CreateToggle({Name = "Fullbright", CurrentValue = false, Flag = "fullbright", Callback = function(v) Settings.Fullbright = v end})
-local perfToggle = MiscTab:CreateToggle({Name = "Performance Mode", CurrentValue = false, Flag = "performance_mode", Callback = function(v) Settings.PerformanceMode = v end})
-local fovSlider = MiscTab:CreateSlider({Name = "FOV", Range = {30, 120}, Increment = 1, Suffix = "", CurrentValue = 70, Flag = "fov", Callback = function(v) Settings.FOV = v end})
+local fullbrightToggle = MiscTab:CreateToggle({
+    Name = "Fullbright",
+    CurrentValue = false,
+    Flag = "fullbright",
+    Callback = function(v)
+        Settings.Fullbright = v
+        applyFullbrightState()
+    end
+})
+
+local fullbrightStrengthSlider = MiscTab:CreateSlider({
+    Name = "Fullbright Strength",
+    Range = {1, 5},
+    Increment = 1,
+    Suffix = "x",
+    CurrentValue = 2,
+    Flag = "fullbright_strength",
+    Callback = function(v)
+        Settings.FullbrightStrength = v
+        if Settings.Fullbright then
+            enableFullbright()
+        end
+    end
+})
+
+local perfModeToggle = MiscTab:CreateToggle({
+    Name = "Performance Mode",
+    CurrentValue = false,
+    Flag = "performance_mode",
+    Callback = function(v)
+        Settings.PerformanceMode = v
+        applyPerformanceMode()
+    end
+})
+
+MiscTab:CreateLabel("Performance mode reduces game graphics quality for higher FPS.")
 
 local function updateUIFromSettings()
     updateLiveColors()
-
     safeSet(espToggle, Settings.ESP_Enabled)
     safeSet(boxToggle, Settings.Box_Enabled)
     safeSet(tracerToggle, Settings.ShowTracers)
+    safeSet(distanceToggle, Settings.ShowDistance)
     safeSet(chamsToggle, Settings.Chams_Enabled)
     safeSet(chamsWallsToggle, Settings.Chams_Walls)
     safeSet(hideTeamToggle, Settings.HideTeam)
     safeSet(boxTypeDropdown, {Settings.BoxType})
+    safeSet(tracerOriginDropdown, {Settings.TracerOrigin})
     safeSet(boxHeightSlider, Settings.BoxHeight)
     safeSet(boxWidthSlider, Settings.BoxWidth)
     safeSet(maxDistanceSlider, Settings.MaxDistance)
     safeSet(mergeDistanceSlider, Settings.MergeDistance)
-
     safeSet(enemyColorPicker, liveSettings.EnemyColor)
     safeSet(friendlyColorPicker, liveSettings.FriendlyColor)
     safeSet(enemyChamsFillPicker, liveSettings.EnemyChamsFill)
     safeSet(friendlyChamsFillPicker, liveSettings.FriendlyChamsFill)
     safeSet(chamsOutlinePicker, liveSettings.ChamsOutline)
     safeSet(tracerColorPicker, liveSettings.TracerColor)
-
     safeSet(fullbrightToggle, Settings.Fullbright)
-    safeSet(perfToggle, Settings.PerformanceMode)
-    safeSet(fovSlider, Settings.FOV)
+    safeSet(fullbrightStrengthSlider, Settings.FullbrightStrength)
+    safeSet(perfModeToggle, Settings.PerformanceMode)
+    applyFullbrightState()
+    applyPerformanceMode()
 end
 
 local configNameInput = ConfigTab:CreateInput({
@@ -333,105 +494,6 @@ ConfigTab:CreateButton({
 
 Rayfield:Notify({Title = "Frontlines ESP", Content = "by fiosty - loaded", Duration = 3})
 
-local function enableFullbright()
-    originalLighting.Ambient = Lighting.Ambient
-    originalLighting.Brightness = Lighting.Brightness
-    originalLighting.GlobalShadows = Lighting.GlobalShadows
-    originalLighting.OutdoorAmbient = Lighting.OutdoorAmbient
-    originalLighting.FogEnd = Lighting.FogEnd
-    originalLighting.FogStart = Lighting.FogStart
-
-    Lighting.Ambient = Color3.new(1, 1, 1)
-    Lighting.Brightness = 10
-    Lighting.GlobalShadows = false
-    Lighting.OutdoorAmbient = Color3.new(1, 1, 1)
-    Lighting.FogEnd = 999999
-    Lighting.FogStart = 999999
-end
-
-local function disableFullbright()
-    Lighting.Ambient = originalLighting.Ambient or Color3.new(0.5, 0.5, 0.5)
-    Lighting.Brightness = originalLighting.Brightness or 2
-    Lighting.GlobalShadows = originalLighting.GlobalShadows ~= false
-    Lighting.OutdoorAmbient = originalLighting.OutdoorAmbient or Color3.new(0.5, 0.5, 0.5)
-    Lighting.FogEnd = originalLighting.FogEnd or 1000
-    Lighting.FogStart = originalLighting.FogStart or 0
-end
-
-local function enablePerformance()
-    pcall(function()
-        settings().Rendering.QualityLevel = 1
-    end)
-
-    for _, v in ipairs(workspace:GetDescendants()) do
-        if v:IsA("ParticleEmitter") then
-            perfCache.particles[v] = v.Rate
-            v.Rate = 0
-        elseif v:IsA("Trail") then
-            perfCache.trails[v] = v.Enabled
-            v.Enabled = false
-        elseif v:IsA("PointLight") or v:IsA("SpotLight") or v:IsA("SurfaceLight") then
-            perfCache.lights[v] = v.Enabled
-            v.Enabled = false
-        elseif v:IsA("Fire") or v:IsA("Smoke") or v:IsA("Sparkles") then
-            if v:IsA("Fire") then
-                perfCache.fires[v] = v.Enabled
-            else
-                perfCache.smokes[v] = v.Enabled
-            end
-            v.Enabled = false
-        end
-    end
-
-    for _, v in ipairs(Lighting:GetDescendants()) do
-        if v:IsA("BloomEffect") then
-            perfCache.bloom = v.Enabled
-            v.Enabled = false
-        elseif v:IsA("Atmosphere") then
-            perfCache.atmosphere = v.Density
-            v.Density = 0
-        end
-    end
-end
-
-local function disablePerformance()
-    pcall(function()
-        settings().Rendering.QualityLevel = 7
-    end)
-
-    for v, rate in pairs(perfCache.particles) do
-        if v.Parent then v.Rate = rate end
-    end
-    for v, enabled in pairs(perfCache.trails) do
-        if v.Parent then v.Enabled = enabled end
-    end
-    for v, enabled in pairs(perfCache.lights) do
-        if v.Parent then v.Enabled = enabled end
-    end
-    for v, enabled in pairs(perfCache.fires) do
-        if v.Parent then v.Enabled = enabled end
-    end
-    for v, enabled in pairs(perfCache.smokes) do
-        if v.Parent then v.Enabled = enabled end
-    end
-
-    for _, v in ipairs(Lighting:GetDescendants()) do
-        if v:IsA("BloomEffect") and perfCache.bloom ~= nil then
-            v.Enabled = perfCache.bloom
-        elseif v:IsA("Atmosphere") and perfCache.atmosphere ~= nil then
-            v.Density = perfCache.atmosphere
-        end
-    end
-
-    perfCache = {particles = {}, trails = {}, lights = {}, fires = {}, smokes = {}, bloom = nil, atmosphere = nil}
-end
-
-local ESP_Objects = {}
-local Cham_Objects = {}
-local cachedParts = {}
-local lastCacheUpdate = 0
-local frameCount = 0
-
 local function FindSoldierModels()
     local models = {}
     for _, obj in ipairs(workspace:GetChildren()) do
@@ -444,7 +506,9 @@ local function FindSoldierModels()
                     break
                 end
             end
-            if hasMesh and hasPrimary then table.insert(models, obj) end
+            if hasMesh and hasPrimary then
+                table.insert(models, obj)
+            end
         end
     end
     return models
@@ -453,13 +517,6 @@ end
 local function RemoveCham(key)
     local cham = Cham_Objects[key]
     if cham then cham:Destroy(); Cham_Objects[key] = nil end
-end
-
-local function ClearAllChams()
-    for key, cham in pairs(Cham_Objects) do
-        if cham and cham.Parent then cham:Destroy() end
-    end
-    table.clear(Cham_Objects)
 end
 
 local function ApplyCham(model, color)
@@ -484,6 +541,7 @@ end
 local function HideAll(objects)
     if objects.Box then objects.Box.Visible = false end
     if objects.Tracer then objects.Tracer.Visible = false end
+    if objects.Distance then objects.Distance.Visible = false end
     if objects.Lines then
         for _, line in ipairs(objects.Lines) do line.Visible = false end
     end
@@ -492,6 +550,7 @@ end
 local function RemoveAll(objects)
     if objects.Box then objects.Box:Remove(); objects.Box = nil end
     if objects.Tracer then objects.Tracer:Remove(); objects.Tracer = nil end
+    if objects.Distance then objects.Distance:Remove(); objects.Distance = nil end
     if objects.Lines then
         for _, line in ipairs(objects.Lines) do line:Remove() end
         objects.Lines = nil
@@ -500,16 +559,6 @@ end
 
 RunService.RenderStepped:Connect(function()
     if not Camera then Camera = workspace.CurrentCamera return end
-
-    Camera.FieldOfView = Settings.FOV
-
-    if Settings.Fullbright then
-        Lighting.Ambient = Color3.new(1, 1, 1)
-        Lighting.Brightness = 10
-        Lighting.GlobalShadows = false
-        Lighting.OutdoorAmbient = Color3.new(1, 1, 1)
-        Lighting.FogEnd = 999999
-    end
 
     frameCount = frameCount + 1
     if frameCount % 3 ~= 0 then return end
@@ -568,9 +617,13 @@ RunService.RenderStepped:Connect(function()
             end
         end
 
-        for model, color in pairs(activeChams) do ApplyCham(model, color) end
-        for model in pairs(Cham_Objects) do
-            if not activeChams[model] then RemoveCham(model) end
+        if Settings.Chams_Enabled then
+            for model, color in pairs(activeChams) do ApplyCham(model, color) end
+            for model in pairs(Cham_Objects) do
+                if not activeChams[model] then RemoveCham(model) end
+            end
+        else
+            ClearAllChams()
         end
 
         table.sort(cachedParts, function(a, b) return a.dist < b.dist end)
@@ -634,6 +687,8 @@ RunService.RenderStepped:Connect(function()
     end
 
     local drawnClusters = {}
+    local tracerOrigin = getTracerOrigin()
+
     for cid, cluster in pairs(activeClusters) do
         drawnClusters[cid] = true
         local color = cluster.isEnemy and liveSettings.EnemyColor or liveSettings.FriendlyColor
@@ -642,11 +697,16 @@ RunService.RenderStepped:Connect(function()
 
         if camDist <= Settings.MaxDistance then
             if not ESP_Objects[cid] then
-                ESP_Objects[cid] = {Box = Drawing.new("Square"), Lines = {}, Tracer = Drawing.new("Line")}
+                ESP_Objects[cid] = {Box = Drawing.new("Square"), Lines = {}, Tracer = Drawing.new("Line"), Distance = Drawing.new("Text")}
                 local objects = ESP_Objects[cid]
                 objects.Box.Thickness = 2
                 objects.Box.Filled = false
                 objects.Tracer.Thickness = 1
+                objects.Distance.Center = true
+                objects.Distance.Size = 14
+                objects.Distance.Font = 2
+                objects.Distance.Outline = true
+                objects.Distance.OutlineColor = Color3.fromRGB(0, 0, 0)
                 for i = 1, 4 do
                     local line = Drawing.new("Line")
                     line.Thickness = 2
@@ -675,14 +735,24 @@ RunService.RenderStepped:Connect(function()
                     if Settings.ShowTracers then
                         objects.Tracer.Visible = true
                         objects.Tracer.Color = liveSettings.TracerColor
-                        objects.Tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                        objects.Tracer.From = tracerOrigin
                         objects.Tracer.To = Vector2.new(screenTop.X, screenTop.Y + boxHeight / 2)
                     else
                         objects.Tracer.Visible = false
                     end
+
+                    if Settings.ShowDistance then
+                        objects.Distance.Visible = true
+                        objects.Distance.Color = color
+                        objects.Distance.Text = tostring(math.floor(camDist)) .. "m"
+                        objects.Distance.Position = Vector2.new(screenTop.X, screenTop.Y - 16)
+                    else
+                        objects.Distance.Visible = false
+                    end
                 else
                     objects.Box.Visible = false
                     objects.Tracer.Visible = false
+                    objects.Distance.Visible = false
                 end
 
                 for _, line in ipairs(objects.Lines) do line.Visible = false end
@@ -714,14 +784,24 @@ RunService.RenderStepped:Connect(function()
                     if Settings.ShowTracers then
                         objects.Tracer.Visible = true
                         objects.Tracer.Color = liveSettings.TracerColor
-                        objects.Tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                        objects.Tracer.From = tracerOrigin
                         objects.Tracer.To = Vector2.new(screenCenter.X, screenCenter.Y)
                     else
                         objects.Tracer.Visible = false
                     end
+
+                    if Settings.ShowDistance then
+                        objects.Distance.Visible = true
+                        objects.Distance.Color = color
+                        objects.Distance.Text = tostring(math.floor(camDist)) .. "m"
+                        objects.Distance.Position = Vector2.new(screenCenter.X, screenTopY3D - 16)
+                    else
+                        objects.Distance.Visible = false
+                    end
                 else
-                    for _, line in ipairs(lines) do line.Visible = false end
+                    for _, line in ipairs(objects.Lines) do line.Visible = false end
                     objects.Tracer.Visible = false
+                    objects.Distance.Visible = false
                 end
                 objects.Box.Visible = false
             end
@@ -737,13 +817,3 @@ RunService.RenderStepped:Connect(function()
         end
     end
 end)
-
-fullbrightToggle.Callback = function(v)
-    Settings.Fullbright = v
-    if v then enableFullbright() else disableFullbright() end
-end
-
-perfToggle.Callback = function(v)
-    Settings.PerformanceMode = v
-    if v then enablePerformance() else disablePerformance() end
-end
