@@ -552,7 +552,7 @@ RunService.RenderStepped:Connect(function()
                     local boxHeight = math.abs(screenBottom.Y - screenTop.Y)
                     local boxWidth = boxHeight * (Settings.BoxWidth / Settings.BoxHeight)
 
-                    objects.Box.Visible = Settings.Box_Enabled
+                    objects.Box.Visible = (Settings.Box_Enabled == true)
                     objects.Box.Color = color
                     objects.Box.Position = Vector2.new(screenTop.X - boxWidth / 2, screenTop.Y)
                     objects.Box.Size = Vector2.new(boxWidth, boxHeight)
@@ -589,10 +589,12 @@ RunService.RenderStepped:Connect(function()
                 if vis1 or vis2 or vis3 or vis4 then
                     local lines = objects.Lines
                     for _, line in ipairs(lines) do line.Color = color end
-                    lines[1].From = Vector2.new(p1.X, p1.Y); lines[1].To = Vector2.new(p2.X, p2.Y); lines[1].Visible = true
-                    lines[2].From = Vector2.new(p2.X, p2.Y); lines[2].To = Vector2.new(p3.X, p3.Y); lines[2].Visible = true
-                    lines[3].From = Vector2.new(p3.X, p3.Y); lines[3].To = Vector2.new(p4.X, p4.Y); lines[3].Visible = true
-                    lines[4].From = Vector2.new(p4.X, p4.Y); lines[4].To = Vector2.new(p1.X, p1.Y); lines[4].Visible = true
+                    lines[1].From = Vector2.new(p1.X, p1.Y); lines[1].To = Vector2.new(p2.X, p2.Y)
+                    lines[2].From = Vector2.new(p2.X, p2.Y); lines[2].To = Vector2.new(p3.X, p3.Y)
+                    lines[3].From = Vector2.new(p3.X, p3.Y); lines[3].To = Vector2.new(p4.X, p4.Y)
+                    lines[4].From = Vector2.new(p4.X, p4.Y); lines[4].To = Vector2.new(p1.X, p1.Y)
+
+                    for _, line in ipairs(lines) do line.Visible = (Settings.Box_Enabled == true) end
 
                     if Settings.ShowTracers then
                         objects.Tracer.Visible = true
